@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpaceTeam</title>
+    <link rel="icon" href="https://cdn2.iconfinder.com/data/icons/thesquid-ink-40-free-flat-icon-pack/64/space-rocket-512.png" type="image/png">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <link rel="stylesheet" href="html/index.css">
+    <link href='https://fonts.googleapis.com/css?family=Lato:300,400,700' rel='stylesheet' type='text/css'>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <!-- <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script> -->
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id='stars'></div>
+    <div id='stars2'></div>
+    <div id='stars3'></div>
+    <div id='game_info'>
+        <span id="player_list"></span>
+    </div>
+    <div id='title'>
+        <span>
+            WELCOME TO
+        </span>
+        <br>
+        <span>
+            SPACETEAM
+        </span>
+    </div>
+    <div id='body'>
+        <span></span>
+        <br>
+        <span>form</span>
+        <span><a href="WEB_ROOT/home.py">go home</a></span>
+    </div>
+</body>
+    <script>
+        var timer = document.getElementById("seconds");
+        var getStuff = setInterval(setTime, 1000);
+        function setTime(){
+            $.get(
+            "WEB_ROOT/get_players.py",
+            {game_id : "NUMBER_I_NEED"},
+            function(data) {
+                document.getElementById("player_list").innerHTML = "";
+                let names = data.split(", ").slice(0,-1);
+                console.log(names);
+
+                for (let name in names){
+                    let a_tag = '<a href="WEB_ROOT/show_board.py?game_id=GAME_ID&user=' + names[name] + '">' + names[name] + '</a>';
+                    document.getElementById("player_list").innerHTML += a_tag;
+                    document.getElementById("player_list").innerHTML += "<br>";
+                }
+            }
+            );
+            
+            if (timer != null && timer.innerHTML > 0){
+                timer.innerHTML = parseInt(timer.innerHTML) -1;
+            }
+            else {
+                try{
+                    document.getElementById("lobby").innerHTML = "Game has started<br>Click on your name to see your board";
+                } finally {
+                    clearInterval(getStuff);
+                }
+            }
+        }
+        function handle(){
+            console.log(document.getElementById("gamid").value);
+            document.location.href = "WEB_ROOT/home.py?game_id=" + document.getElementById("gamid").value;
+        }
+    </script>
+</html>

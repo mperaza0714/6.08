@@ -1,0 +1,241 @@
+<big><big><center>**Milestone 4**</center></big></big>
+
+# Demos
+
+This shows two perspectives of a two-player round of our game.
+
+![User 1 Demo](https://youtu.be/QN9Pb_de5kM)
+
+![User 2 Demo](https://youtu.be/57ZNl5st5Yc)
+
+# Deliverables
+
+##Deliverable: Updated Pin Map, Layout, and Fully Assembled Boards
+
+<center> <big> **Pin Map:** </center> </big>
+
+<center> Module </center> | <center> IO Pin </center> | <center> Marking </center> |
+--------|---|-----
+Button Panel 1 | IO | -
+1 | IO33 | 33
+2 | IO25 | 25
+3 | IO26 | 26
+4 | IO27 | 27
+Button Panel 2 | IO | -
+1 | IO14 | 14
+2 | IO13 | 13
+3 | IO12 | 12
+4 | IO0 | 0
+Switch 1 | IO32 | 32
+Dial 1 | IO34 | 34
+Slider 1 | IO36 | VP
+Phototransistor 1 | IO39 | VN
+Phototransistor 2 | IO35 | 35
+
+![Board Layout](https://imgur.com/BjRDZh0.png width="300px")
+
+
+Finalized wiring map, missing IMU and slider wiring because parts don't exist in Fritzing
+
+![Assembled Board](https://imgur.com/SdWkrAw.png)
+
+## Deliverable: Themed Boards
+
+Created 5 themed boards with different names for each module. In order for the user to figure out what their instructions correspond to they must use these images which will appear on the webpage.
+
+Created an IMU module for additional challenge.
+
+![Back To The Future](https://imgur.com/ScoDvmw.png)
+
+![Harry Potter](https://imgur.com/UDoblfC.png)
+
+![Marvel](https://imgur.com/IJXWG3V.png)
+
+![MIT](https://imgur.com/GRShr5z.png)
+
+![Star Wars](https://imgur.com/WS3jCsy.png)
+
+## Goal: Updated Boards in Database
+
+Updated boards.py to have the correct nodule names and create the themed boards which correspond to the images.
+
+panel_names	|	dial_names	|	switch_names	|	slider_names	|	phototransistor_names	|	imu_names
+---|---|---|---|---|---
+Panhel	|	MIT Timer	|	Productivity	|	Dorm Row	|	Succulent	|	DBF
+Answer Checker	|		|		|		|	Solar Car	|
+Infinity Stones	|	S.H.I.E.L.D.	|	Gamma Rays	|	Pym Particles	|	Arc Reactor	|	Sling Ring
+Ultron	|		|		|		|	Spidey Senses	|
+Horcrux	|	Time Turner	|	Golden Snitch	|	Basalisk	|	Lumos	|	Portkey
+O.W.L.s	|		|		|		|	Deluminator	|
+Millennium Falcon	|	Sith	|	Hyperdrive	|	Podracer	|	Lightsaber	|	BB-8
+Death Star	|		|		|		|	Holocron	|
+The Delorean	|	Clock Tower	|	Great Scott	|	Hoverboard	|	Lightning Rod	|	Flux Capacitor
+Almanac	|		|		|		|	Plutonium	|
+
+## Deliverable: IMU control
+
+Added an IMU-based shake control. The client stores a 20-period EMA of the
+2-norm of the IMU's acceleration axes, and outputs a 1 for the shake control
+when this value is over 0.5.
+
+```
+imu.readAccelData(imu.accelCount);
+double imu_norm = norm(imu.accelCount[0] * imu.aRes, imu.accelCount[1] * imu.aRes);
+imu_accel_ema *= 1 - 1.0 / IMU_EMA_PERIOD;
+imu_accel_ema += imu_norm * 1.0 / IMU_EMA_PERIOD;
+...
+snprintf(body, BODY_BUFFER_SIZE, "%simu_1=%d", body, imu_accel_ema > 0.5);
+```
+
+## Goal: Finish ESP32 code
+
+Added shake, slider, and phototransistor controls to the ESP client, and updated all pins to
+ match the final layout. The client is now fully functional, meaning it can join games, receive a
+  username, receive other players' instructions, and complete all instruction types.
+
+## Goal: Update website
+
+To the website, we added an option to get to the new game page from the home page with your game id.
+Added go home links, Added new board images, Added an ico for the site,
+Changed the names from random letters and number to the military phonetic alphabet names.
+
+```
+def random_m_username(game_id, db):
+    names = ["Alfa", "Bravo", 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel', 'India', 'Juliett', 'Kilo', 'Lima',
+                'Mike', 'November', 'Oscar', 'Papa', 'Quebec', 'Romeo', 'Sierra', 'Tango', 'Uniform', 'Victor', 'Whiskey', 'X-ray', 'Yankee', 'Zulu']
+    username = random.choice(names)
+    while (True):
+        try:
+            db.join_game(username, game_id)
+            return username
+        except:
+            names.remove(username)
+            username = random.choice(names)
+```
+
+## Goal: Handling Multiple players
+
+The server is now capable of handling multiple users and sending them unique instructions
+via an instructions queue that randomly pulls a user name and then assigns that user's next instruction
+to the current player. Because the user being sent the instruction and the user whose board it belongs to
+are different, there are functions to specify the target (whose board it belongs to) and the player (user receiving instruction)
+
+The logic to start the instruction queue is now included in the get_next_instruction_queue function, as before it was initialized
+whenever the player joined the game. Now, whichever player is the first to send a get request, upon querying an empty table,
+triggers the start queue function for all of the players in the game
+
+Now, there are different functions for displaying the instruction text (show_instruction_queue) and for
+checking whether or not an instruction has been met (get_next_instruction_queue)
+
+```
+def update_instructions_queue(self, user, game_id):
+      self.remove_instruction_queue(user, game_id)
+      target = self.get_rand_user(user, game_id)
+      next_instruct = self.get_next_instruction(target, game_id)
+      self.remove_instruction(target, game_id, next_instruct[-1])
+      self.add_instruction_queue(game_id, user, next_instruct)
+      return self.get_next_instruction_queue(user, game_id)
+```
+
+```
+def get_next_instruction_queue(self, user, game_id):
+    #return next instruction in the queue
+    if self.empty_instruction_queue(game_id):
+        self.start_queue(game_id)
+        return ":("
+    query = self.cur.execute(
+            "SELECT * FROM instructions_queue WHERE username = ? AND game_id = ?;",
+             (user,game_id)
+    ).fetchone()
+    return query
+```
+
+```
+def show_instruction_queue(self, target, game_id):
+      query = self.cur.execute(
+              "SELECT * FROM instructions_queue WHERE target_user = ? AND game_id = ?;",
+               (target, game_id)
+      ).fetchone()
+      return query[-3]
+```
+
+```
+def start_queue(self, game_id):
+      users = self.get_all_users(game_id)
+      for user in users:
+          target = self.get_rand_user(user, game_id)
+          next_instruct = self.get_next_instruction(target, game_id)
+          self.remove_instruction(target, game_id, next_instruct[-1])
+          self.add_instruction_queue(game_id, user, next_instruct)
+```
+
+
+# Code Appendix
+
+Boards.py
+
+~~~ python
+#All MODULES
+button_panels = ["Panhel",
+                 "Answer Checker",
+                 "Infinity Stones",
+                 "Ultron",
+                 "Horcrux",
+                 "O.W.L.s",
+                 "Millennium Falcon",
+                 "Death Star",
+                 "The DeLorean",
+                 "Almanac"]
+
+switches = ["Productivity",
+            "Gamma Rays",
+            "Golden Snitch",
+            "Hyperdrive",
+            "Great Scott"]
+
+sliders = ["Dorm Row",
+           "Pym Particles",
+           "Basilisk",
+           "Podracer",
+           "Hoverboard"]
+
+dials = ["MIT Timer",
+         "S.H.I.E.L.D.",
+         "Time Turner",
+         "Sith",
+         "Clock Tower"]
+
+phototransistors = ["Succulent",
+                    "Solar Car",
+                    "Spidey Senses",
+                    "Arc Reactor",
+                    "Deluminator",
+                    "Lumos",
+                    "Holocron",
+                    "Lightsaber",
+                    "Lightning Rod",
+                    "Plutonium"]
+
+imus = ["DBF",
+        "Sling Ring",
+        "Portkey",
+        "BB-8",
+        "Flux Capacitor"]
+
+image_paths = ["MIT_board.png",
+               "marvel_board.png",
+               "harry_potter_board.png",
+               "star_wars_board.png",
+               "back_to_the_future_board.png"]
+
+def return_board(i):
+    board = [button_panels[2*i], button_panels[2*i+1],
+             switches[i],
+             dials[i],
+             sliders[i],
+             phototransistors[2*i], phototransistors[2*i+1],
+             image_paths[i]]
+    return board
+~~~
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

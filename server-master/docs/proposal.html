@@ -1,0 +1,110 @@
+
+<center><big><big> **Final Project Proposal** </big></big></center>
+
+<small><center>*Created By: Mario Peraza, Joseph Morales, Julian Hamelberg, Mateo Hernandez, Brendon Reperttang*</small></center>
+
+<big><center> **Overview** </big></center>
+
+[Name of Project] is a cooperative multiplayer game involving fast paced puzzle solving. Teams are composed of multiple players, each player will have their own ESP system with numerous connected IO modules including switches, buttons, phototransistors, and more. Each ESP system will need its modules activated in a certain way, in a certain order, but the specific instructions are unknown to that player. Instead, each player is given instructions which correspond to a different players system and they will have to work together to keep from **total system failure.** The ultimate goal is to successfully complete instructions within their time limits for as long as possible. We will use our ESPs as customizable controllers, with every person being given a separate system layout to wire and configure, and they will all connect to a server that will handle generating and sending instructions, along with resolving completed instructions.
+
+**_________________________________________________________________________________________________________________________**
+
+
+<big><center> **Detailed Description** </big></center>
+
+<center>**System Block**</center>
+
+******************************************************
+*                       .-.                          *
+*                    .-+   |  <---.     .-------.    *
+*                .--+       '--.   +---+         |   *
+*               |     Server    +----->|Database |   *
+*           .--> '+-----------+'       |         |   *
+*          |      |   ^       |         '-------'    *
+*          |      |   |       |                      *
+*          |      |   |       |                      *
+*       .--+-.    | .-+--.    |                      *
+*       |ESP1|<--'  |ESP2|<--'                       *
+*       '----'      '----'                           *
+******************************************************
+[Users (ESP32s) connect to the server in order to play the game, and throughout the course of the game, inputs and board states are stored in the database, while instructions and board layouts are pulled from the database. The server handles resolving inputs with instructions and the overall logic of the game]
+
+<center>**State Machine**</center>
+
+<center><img src='https://g.gravizo.com/svg?
+ digraph G {
+   idle -> waiting_for_players -> receive_layout -> receive_instructions;
+   receive_instructions -> wait_for_input -> POST_completed_action -> wait_for_other_players -> receive_instructions;
+   wait_for_input -> time_limit_reached -> receive_instructions;
+   time_limit_reached -> game_over;
+   POST_completed_action -> game_completed;
+ }
+'/></center>
+
+<center>**Database**</center>
+
+The database would have a list of instructions which would function as a queue for each player's game board. Once a player has completed a task for their system, that instruction would be removed from the database so it can no longer be used. The database should also hold a table of player inputs for each user, allowing for the server to be able to recognize when a task is completed by a particular player. The database will also be used to store numerous game board configurations so that when a player connects, a game layout can be given to them at random from a list of known, functional game boards.
+
+<center>**Server**</center>
+
+Entry webpage would help connect all of the players to a game, while the server would use inputted usernames to connect a player to their ESP. From then on, the server would display a ESP32 layout for you to set your board up, and would show the current game score as it progresses. The server would then serve out instructions to each individual player via the instructions queue in their database. The server would constantly be receiving and then storing inputs from each player via POSTS from their ESP, and would send out new instructions to constant GET requests from each player as old ones are completed.
+
+<center>**ESP32 Modules**</center>
+
+1. Switch - Player would have to flip the switch to pass the module.
+2. Button - Player would have to push a button or series of buttons in order to pass the module. Could make button pushes time dependent.
+3. Phototransistor - Must wave hand over transistor so it can sense motion to pass the module.
+4. Accelerometer - Must move the system in the correct way to pass the module. Could be a series of movements or a rapid movement like a shake.
+5. Velostat - Pressure sensitive module, would have to exert a certain force to pass this module.
+6. Potentiometer/Dial - Must move the dial to a particular position to pass this module
+7. LEDS + Phototransistor - Module that detects whether or not you have wired LEDS properly so that they light up
+8. Resistor Voltage Divider - Module involving setting up resistors in series (or maybe parallel if we're mean) in order to return the desired voltage or voltages
+
+We will create a library of functions that check for the proper input from each kind of module and handle putting those inputs into a buffer array to be sent to the server. The ESP32 will have code that continually sends the board state, and we will need to standardize the message that is sent across all board configurations.
+
+
+**_________________________________________________________________________________________________________________________**
+
+
+<big><center> **Technical Challenges** </big></center>
+
+1. Making the board customizable in terms of changing around the order and wiring of IO devices without having to change code to account for different pins being used. For example, if one player’s controller has buttons connected to IO16 and IO17, but another player only has one button connected to IO4, we want the individual ESP32s to be able to handle this and only report connected buttons. We anticipate this might require blocking off and initializing certain sets of ports to be connected to specific types of input, but only checking the pins specified by the game.
+2. Sending an instruction for a player to the ESP of a different player. We want to have the player see an instruction on screen which corresponds to a different player’s board. THis could lead to problems with keeping track of where all of the information is being sent to. We do not want to have any overlapped or missing data, this would lead to the game being unplayable. We think using the database to keep track of all the instructions and inputs should solve this problem by only allowing instructions to be sent once and getting rid of them once a task is complete.
+3. Figuring out how often we need to send post requests of each board’s state and how often we need to do a get request for new instructions to make the experience feel enjoyable in real time. We want to make sure not to have too many requests happening in one system because this might slow the system down significantly which would lead to lag time, something that is not desirable in a time-based game. We need to experiment with how much our systems can handle and find a balance .
+4. Updating the website real time to show a timer or score or maybe put all of this information on the ESP, but that might be too busy for the small screen. We do not yet know how to update a webpage in real time without refreshing and it would be nice to have a larger display than the LCD in the ESP System, but it would not be terrible if we had to use it.
+5. Starting the multiplayer game might be a challenge because we would need a UI or website where players can upload their usernames and start a game in real time. Their ESPs also have to be connected and their boards would have to be configured the correct way. In order to solve this problem we are planning on making a website on the server which can help display important information and get a user set up.
+
+**_________________________________________________________________________________________________________________________**
+
+
+<big><center> **Milestones** </big></center>
+
+<center>Milestone</center> | <center>Demo</center>   
+----|------
+4/16: Complete the ESP32 interface/hardware, implementing all available IO devices, and completing the libraries for each type of input detection (ie button vs potentiometer vs voltage divider), set up a simple server to receive inputs and send outputs. Additionally, we will have a list of most of the instructions that will be required in the game. | Video showing the ESP registering and printing different actions performed using the controls into the Serial Monitor, along with sending POST and GET requests to a server to upload input information/download game state. Video will also show our instructions and how we plan on satisfying them|
+4/23: Complete most of the server interface and database backend, including generating and displaying different board set ups, creating databases/handling multiple users at once, generating lists of randomized instructions based off of available users and board configs, and then updating once an instruction has been completed. | Video of multiple “users” accessing the server (in Postman and/or Browser) and displaying different board layouts for each user, a list of instructions for each board, and removing an instruction from the list once it has been completed.
+4/30: Create a complete single player experience, with the ESP32 capable of connecting to the server, receiving instructions to complete, and upon completing those instructions by sending a POST, receiving new instructions through a GET. | Video showing the ESP32 connecting to the server, getting a board layout, receiving instructions, and then getting new instructions as old ones are completed.
+5/7: Extend the game to multiple players, with the game progresses as each  player successfully completes instructions. Server will be capable of connecting to multiple users and keeping track of all of their game states. Server must be able to handle sending instructions to a user that don’t belong to their board, and must be capable of resolving numerous instructions at once. | Video showing multiple users and ESPs connecting to the server, and a game starting. We will then show people receiving instructions for another person’s board, and upon that other person resolving that instruction, a new instruction being sent. There will be no time limit for the purposes of clearly demonstrating functionality across multiple users
+
+**_________________________________________________________________________________________________________________________**
+
+
+<big><center> **Parts List** </big></center>
+
+<center>Part</center> | <center>Part Number</center> | <center>Link</center> | <center>Cost</center> | <center>Quantity</center> | <center>Total Cost</center>
+--------|---|-----|---|---|---
+Piezo Resistors |	1740 | https://www.adafruit.com/products/1740 |	$0.95 |	5	| $4.75
+Buttons (20)|	367 |	https://www.adafruit.com/product/367	| $2.50 |	5 |	$12.50
+Toggles|	3221|	https://www.adafruit.com/product/3221|	$0.95|	10|	$9.50
+Jumper Wires	| 3142 |	https://www.adafruit.com/product/3142	|$3.95|	5|	$19.75
+Slide Potentiometer |	4272 |	https://www.adafruit.com/product/4272	|$1.76	|10	|$17.60
+Knob Potentionmeter	|2047	|https://www.adafruit.com/product/2047	|$0.45	|10	|$4.50
+Phototransistors	|2831	|https://www.adafruit.com/product/2831	|$0.95	|10	|$9.50
+Velostat (11" x 11")	|1361	|https://www.adafruit.com/product/1361	|$4.95	|5	|$24.75
+10K Resistors (25)	|2784	|https://www.adafruit.com/product/2784	|$0.75	|5	|$3.75
+
+
+
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

@@ -1,0 +1,277 @@
+<big><big><center>**Milestone 2**</center></big></big>
+
+# Demos
+
+![demo](https://youtu.be/g2OsDLwl91s)
+
+This demo shows
+
+- ESP32 Printing Instructions on the TFT
+- Instructions updating on the ESP32 as the server updates them
+
+![demo 2](https://youtu.be/iwjDxjPIdfA)
+
+This demo shows printing control inputs on the serial monitor in POST format
+
+![demo 3](https://youtu.be/ESSopEr-PKI)
+
+This demo shows the ESP32 posting its username to the game by game ID
+
+# Deliverables
+
+## Deliverable: Layout
+
+![Tentative](https://i.imgur.com/hTtJxhs.png width="300px")
+
+Final board layout is dependent on parts coming in. Slider is included to show placement, but part size and wiring is not final until we receive the sliders we had ordered.
+
+## Deliverable: Pin Map
+
+<center> Module </center> | <center> Pin </center> | <center> Marking </center> |
+--------|---|-----
+Button Panel 1 | IO | -
+1 | IO1 | TX
+2 | IO21 | 21
+3 | IO39 | VN
+4 | IO3 | RX
+5 | IO36 | VP
+6 | IO34 | 34
+Button Panel 2 | IO | -
+1 | IO13 | 13
+2 | IO0 | D2
+3 | IO9 | D3
+4 | IO11 | CMD
+Switch 1 | IO35 | 35
+Switch 2 | IO32 | 32
+Dial 1 | A19 | 26
+Dial 2 | A16 | 14
+Phototransistor 1 | A17 | 27
+Phototransistor 2 | A15 | 12
+
+Map of where each component is wired, along with what that pin looks like on the ESP32
+
+## Deliverable: control inputs
+
+- Write methods to translate button, switch, dial, slider, and phototransistor
+  inputs into POST-sendable strings
+
+All controls are implemented as structs which are manipulable via helper
+methods. Every loop, the control structs are updated using the `update_button`,
+`update_switch` and `update_control` (for generic continuous analog inputs)
+functions.
+
+Buttons and switches are implemented using a 50ms debounce timer, with
+the `pullup` function detecting a button-release event and the `flipped`
+function detecting a switch flip.
+
+Sliders, dials, and phototransistors have their analog outputs mapped into bins
+of sizes 3, 4, and 10 respectively. A 50-period exponential weighted moving
+average is used to denoise the signals.
+
+## Deliverable: Board Layout
+
+![Entire Board](https://imgur.com/Vqsm6Lz.png)
+
+![Button Panel](https://imgur.com/lydhUBq.png)
+
+![Switch](https://imgur.com/zaPorxw.png)
+
+![Dial](https://imgur.com/Lls5rwe.png)
+
+![Slider](https://imgur.com/KnalwGI.png)
+
+# Code Appendix
+
+Demo Code
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ C
+#include "controls.h"
+#include "net.h"
+#include <SPI.h>
+#include <TFT_eSPI.h>
+#include <mpu6050_esp32.h>
+#include <vector>
+
+TFT_eSPI tft = TFT_eSPI();
+
+const char USER[] = "mperaza";
+
+const uint16_t IN_BUFFER_SIZE = 1000;
+const uint16_t OUT_BUFFER_SIZE = 1000;
+const size_t BODY_BUFFER_SIZE = 512;
+char request_buffer[IN_BUFFER_SIZE];
+char response_buffer[OUT_BUFFER_SIZE];
+char body[BODY_BUFFER_SIZE];
+
+constexpr int DIAL_PINS[] = {26, 14};
+constexpr int PHOTOT_PINS[] = {27, 12};
+constexpr int SWITCH_PINS[] = {35, 32};
+constexpr int BUTTON_PINS[] = {
+    16, 5
+    //  1, 3, 21,
+    //  36, 39, 34,
+    //  13, 9, 0, 11
+};
+
+std::vector<Button> buttons;
+std::vector<Switch> switches;
+std::vector<SmoothControl> dials;
+std::vector<SmoothControl> photots;
+
+void print_states()
+{
+    strcpy(body, "");
+    for (auto &btn : buttons) {
+        snprintf(body, BODY_BUFFER_SIZE, "%sbutton=%d&", body, btn.state);
+    }
+    for (auto &swt : switches) {
+        snprintf(body, BODY_BUFFER_SIZE, "%sswitch=%d&", body, swt.state);
+    }
+    for (auto &dial : dials) {
+        snprintf(body, BODY_BUFFER_SIZE, "%sdial=%d&", body, dial.binnedReading);
+    }
+    for (auto &photot : photots) {
+        snprintf(body, BODY_BUFFER_SIZE, "%sphotot=%d&", body, photot.binnedReading);
+    }
+    Serial.println(body);
+    post_request(body);
+}
+
+void setup()
+{
+    Serial.begin(115200);
+    tft.init();
+    tft.setRotation(2);
+    tft.setTextSize(1);
+    tft.fillScreen(TFT_BLACK);
+
+    for (auto p : DIAL_PINS) {
+        pinMode(p, INPUT);
+        dials.push_back(new_dial(p));
+    }
+    for (auto p : PHOTOT_PINS) {
+        pinMode(p, INPUT);
+        photots.push_back(new_photot(p));
+    }
+    for (auto p : SWITCH_PINS) {
+        pinMode(p, INPUT_PULLUP);
+        switches.push_back(new_switch(p));
+    }
+    for (auto p : BUTTON_PINS) {
+        pinMode(p, INPUT_PULLUP);
+        buttons.push_back(new_button(p));
+    }
+}
+
+void loop()
+{
+    for (auto &btn : buttons)
+        update_button(btn);
+    for (auto &swt : switches)
+        update_switch(swt);
+    for (auto &dial : dials)
+        update_control(dial);
+    for (auto &photot : photots)
+        update_control(photot);
+    if (millis() % 25 == 0)
+        print_states();
+}
+
+void post_request(char *body) {
+    snprintf(body, BODY_BUFFER_SIZE, "%suser=%s", body, USER);
+    int body_len = strlen(body);
+    sprintf(request_buffer, "POST http://608dev-2.net/sandbox/sc/team076/spaceteam/update_instructions.py HTTP/1.1\r\n");
+    strcat(request_buffer, "Host: 608dev-2.net\r\n");
+    strcat(request_buffer, "Content-Type: application/x-www-form-urlencoded\r\n");
+    sprintf(request_buffer + strlen(request_buffer), "Content-Length: %d\r\n", body_len);
+    strcat(request_buffer, "\r\n");
+    strcat(request_buffer, body);
+    Serial.println(request_buffer);
+    http_req("608dev-2.net", request_buffer, response_buffer, OUT_BUFFER_SIZE);
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+GET Demo Code
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ C
+  
+void GET_instruction(char* username, TFT_eSPI t){ 
+memset(request_buffer, 0, IN_BUFFER_SIZE);
+memset(response_buffer, 0, OUT_BUFFER_SIZE);  
+sprintf(request_buffer,"GET http://608dev-2.net/sandbox/sc/team076/spaceteam/instruction_request.py?user=%s HTTP/1.1\r\n", username);
+strcat(request_buffer,"Host: 608dev-2.net\r\n"); //add more to the end
+strcat(request_buffer,"\r\n"); //add blank line!
+do_http_request("608dev-2.net", request_buffer, response_buffer, OUT_BUFFER_SIZE, RESPONSE_TIMEOUT, true);
+if (strcmp(response_buffer,old_response)!= 0){ 
+  t.fillScreen(TFT_WHITE);
+  t.println(response_buffer);
+ }
+memset(old_response, 0, OUT_BUFFER_SIZE);
+sprintf(old_response, response_buffer);
+}
+  
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ESP32 POST Code for Demo
+  
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  void loop() {
+  uint8_t button1 = digitalRead(PIN_1);
+  uint8_t button2 = digitalRead(PIN_2);
+  if (steps < 2){
+    if (!button2 && last_button2){
+      steps++;
+      Serial.println(steps);
+      if (steps == 2){
+        sprintf(game_id, "%d%d", tens, ones);
+        post_code();
+      }
+    }
+    if (!button1 && last_button1){
+      if (steps == 0){
+        ones++;
+        tft.fillScreen(TFT_BLACK);
+
+      } else {
+        tens++;
+        tft.fillScreen(TFT_BLACK);
+
+      }
+      if (ones > 9){
+        ones = 0;
+      }
+      if (tens > 9){
+        tens = 0;
+      }
+    }
+    
+    sprintf(game_id, "Game ID: %d%d", tens, ones, steps);
+    tft.drawString(game_id, 0, 0, 2);
+    
+  }
+  last_button1 = button1;
+  last_button2 = button2;
+}
+
+void post_code(){
+  char body[2000]; //for body
+  sprintf(body,"{\"username\":\"%s\", \"game_id\":\"%s\"}",USER,game_id);//generate body, posting to User, 1 step
+  int body_len = strlen(body); //calculate body length (for header reporting)
+  sprintf(request_buffer,"POST http://608dev-2.net/sandbox/sc/team076/spaceteam/new_game.py HTTP/1.1\r\n");
+  strcat(request_buffer,"Host: 608dev-2.net\r\n");
+  strcat(request_buffer,"Content-Type: application/json\r\n");
+  sprintf(request_buffer+strlen(request_buffer),"Content-Length: %d\r\n", body_len); //append string formatted to end of request buffer
+  strcat(request_buffer,"\r\n"); //new line from header to body
+  strcat(request_buffer,body); //body
+  strcat(request_buffer,"\r\n"); //header
+  Serial.println(request_buffer);
+  do_http_request("608dev-2.net", request_buffer, response_buffer, OUT_BUFFER_SIZE, RESPONSE_TIMEOUT,true);
+  Serial.println(response_buffer); //viewable in Serial Terminal
+
+  tft.fillScreen(TFT_BLACK);
+  sprintf(game_id, "Joined Game %d%d", tens, ones);
+  tft.drawString(game_id, 20, 20, 2);
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

@@ -1,0 +1,515 @@
+<big><big><center>**Milestone 3**</center></big></big>
+
+# Demos
+
+![demo](https://youtu.be/G3a6pUc0FGo)
+
+<center>*It's a functioning game, woah*</center>
+
+# Deliverables
+
+## Deliverable: Game State
+
+Added code that says if the game is over, started, or has yet to start.
+
+```
+def game_end(): #return true if game is over
+    with gamedb.GameDB() as db:
+        return db.game_over() or db.game_won()
+
+def game_start(): #returns true if game has started and false if lobby is still open
+    with gamedb.GameDB() as db:
+        if not game_end():
+            game_id = db.get_active_game()
+            return db.get_start_time(game_id) < gamedb.sec_ago(30)
+        return False
+```
+
+## Deliverable: Layout
+
+![](https://imgur.com/6sRMfJn.png width="300px")
+
+<center> <big> **Pin Map:** </center> </big>
+
+<center> Module </center> | <center> Pin </center> | <center> Marking </center> |
+--------|---|-----
+Button Panel 1 | IO | -
+1 | IO1 | TX
+2 | IO21 | 21
+3 | IO3 | RX
+4 | IO22 | 22
+Button Panel 2 | IO | -
+1 | IO36 | VP
+2 | IO34 | 34
+3 | IO39 | VN
+4 | IO35 | 35
+Switch 1 | IO32 | 32
+Dial 1 | A16 | 14
+Phototransistor 1 | A17 | 27
+Phototransistor 2 | A15 | 12
+
+Current pin mapping, although subject to change with new parts, and as a result of some IO/ADC ports not working
+
+## Deliverable: Assembled Board
+
+![Bootleg ProtoBoard](https://i.imgur.com/ssAKZzF.jpg width="300px")
+
+## Deliverable: Board Layout
+
+![New Board](https://imgur.com/LJZ1R5l.png)
+
+Added a phototransistor module to the board layout and updated it to include parts that we currently have.
+
+Created 5 different themes for board modules and generated images for all of them.
+
+panel_names	|	dial_names	|	switch_names	|	slider_names	|	phototransmitter_names
+---|---|---|---|---
+Panhel	|	MIT Timer	|	Productivity	|	GPA	|	Succulent
+Answer Checker	|	Brass Rattler	|	My Major	|	Dorm Row	|	Solar Car
+Infinity Stones	|	S.H.I.E.L.D.	|	Gamma Rays	|	Pym Particles	|	Arc Reactor
+Ultron	|	Sling Ring	|	Multiverse	|	Web Shooter	|	Spidey Senses
+Horcrux	|	Time Turner	|	Golden Snitch	|	Basilisk	|	Lumos
+O.W.L.s	|	Golden Egg	|	Portkey	|	Dementor	|	Deluminator
+Millennium Falcon	|	BB-8	|	The Force	|	Podracer	|	Lightsaber
+Death Star	|	Sith	|	Hyperdrive	|	The Resistance	|	Holocron
+The DeLorean	|	Time Warp	|	Flux Capacitor	|	Hoverboard	|	Lightning Rod
+Almanac	|	Clock Tower	|	Great Scott	|	Waste Converter	|	Plutonium
+
+## Goal: Combining ESP32 code
+
+Previously, ESP32 code was split amongst multiple demos (gathering inputs,
+getting next instructions, game joining interface, etc.). This week, we
+combined those demos into a functioning game client (`client.ino`), with a
+finite state machine handling the various UI states and transitions. After
+joining a game, the client POSTs inputs and GETs instructions from the server
+every 50ms until a terminating state is reached.
+
+## Goal: Creating and Maintaining Game State variables
+
+Game score, lives, and timer functions, along with an instructions queue, were all
+implemented in order to make the client-server system a game. The instructions queue is
+a table within the database that has the current instruction for a player, what other
+player the instruction corresponds to, and the initial time that instruction was added
+to the queue. It has multiple functions that allow it to be updated as players either
+complete the given instruction or fail to do so within the time limit.
+
+Instruction Queue Code:
+```
+def start_instruction_queue(self, user):
+      #put an instruction in the instruction queue
+      self.generate_instructions(user)
+      next_instruct = self.get_next_instruction(user)
+      self.remove_instruction(user, next_instruct[-1])
+      self.add_instruction_queue(user, next_instruct)
+      return self.get_next_instruction_queue(user)
+
+def add_instruction_queue(self, user, instruction):
+      instruct = instruction[:5]
+      self.cur.execute(
+          "INSERT INTO instructions_queue"
+          "(username,"
+          " board_id,"
+          " module,"
+          " modifier,"
+          " instruction,"
+          " target_user,"
+          " start_time) VALUES(?,?,?,?,?,?,?);",
+          (*instruct, user, datetime.datetime.now())
+      )
+
+def update_instructions_queue(self, user):
+    self.remove_instruction_queue(user)
+    next_instruct = self.get_next_instruction(user)
+    self.remove_instruction(user, next_instruct[-1])
+    self.add_instruction_queue(user, next_instruct)
+    return self.get_next_instruction_queue(user)
+```
+
+Game time was calculated each time it was called, taking the difference between the
+game start time and the current datetime object.
+Lives and game score are elements of the games table in the database, and are updated
+whenever an instruction condition has been met or the player has run out of time.
+
+Updating Methods:
+```
+def get_game_time(self):
+    game_id = self.get_active_game()
+    start_time = self.get_start_time(game_id)
+    return datetime.datetime.now() - start_time
+
+def lose_life(self, lost):
+      old_lives = self.get_active_lives()
+      new_lives = old_lives - lost
+      self.cur.execute("""UPDATE games SET lives = ? WHERE game_id = ?;""",
+                          (new_lives, self.get_active_game() ) )
+
+def add_score(self, bonus):
+      old_score = self.get_active_score()
+      new_score = old_score + bonus
+      self.cur.execute("""UPDATE games SET score = ? WHERE game_id = ?;""",
+                          (new_score, self.get_active_game() ) )
+```
+
+Updating Logic:
+```
+if module_dict[instruction[2]] == instruction[3]:
+      db.update_instructions_queue(user)
+      db.add_score(1)
+      return "Success"
+elif db.get_instruction_time(user) > datetime.timedelta(seconds = 10):
+      db.update_instructions_queue(user)
+      db.lose_life(1)
+      return "Fail"
+```
+
+When a player loses all of their lives or runs out of time, they lose the game,
+and upon reaching a score threshold, they win. This was represented in our code
+by game_over() and game_won() functions respectively.
+
+Loss/Win Code:
+```
+def game_over(self):
+      return any((self.get_active_lives() <= 0,
+       self.get_game_time() > datetime.timedelta(seconds=100)))
+
+  def game_won(self):
+      return self.get_active_score() >= 5
+```
+
+## Goal: Update scores, lives, and timer on webpage (and other webpage updates)
+
+On a new game, players can click on their name after they've joined to see go to
+their board page. Added a page for getting the score, lives, and time remaining
+game variables. On the player's page, I make get requests to the webpage to display
+the game variables, then remove them after the game ends.
+
+Python Game Variables Code
+```
+def request_handler(req):
+    with gamedb.GameDB() as db:
+        if req["method"] == "GET":
+            form = req["values"]
+            game_id = form["game_id"]
+
+            s = ""
+            s += str(db.get_lives(game_id))
+            s += ", "
+            t = db.get_start_time(game_id)
+            now = datetime.datetime.now()
+
+            s += str(int(100-(now-t).total_seconds()))
+            s += ", "
+            s += str(db.get_score(game_id))
+
+            return s
+```
+
+JS get request
+```
+var getStuff = setInterval(getVars, 1000);
+
+        function getVars(){
+            $.get(
+            "WEB_ROOT/get_game_vars.py",
+            {game_id : NUMBER_I_NEED},
+            function(data) {
+                document.getElementById("game_data").innerHTML = "";
+                let game_vars = data.split(", ");
+                console.log(game_vars);
+                if (game_vars[1] < 0 || game_vars[0] <= 0){
+                    document.getElementById('game').innerHTML = "game over";
+                    clearInterval(getStuff);
+                }
+                time_left = game_vars[1];
+                if (time_left < 0){
+                    time_left = 0;
+                }
+                document.getElementById("game_data").innerHTML += '<p id="lives">lives: ' + game_vars[0] + '</p>';
+                document.getElementById("game_data").innerHTML += '<p id="time">time left: ' + time_left + '</p>';
+                document.getElementById("game_data").innerHTML += '<p id="score">score: ' + game_vars[2] + '</p>';
+
+            }
+            );
+        }
+```
+
+
+## Goal: Generating usernames on server
+
+For last week's demos, usernames were hardcoded into each ESP's code base,
+which decreased flexibility and allowed a user to easily view another user's
+board or instructions when they shouldn't. For this week, we changed the game
+joining flow to avoid this: when an ESP joins a game, the server generates a
+random username for that ESP (e.g. `ajile93`) which is sent back to the ESP and
+displayed on-screen. Then, the user can access his board layout on the website
+using that username.
+
+```
+def random_username():
+    username = ""
+    for _ in range(5):
+        username += chr(random.randint(ord('a'), ord('z')))
+    for _ in range(2):
+        username += str(random.randint(0, 9))
+    return username
+```
+
+# Code Appendix
+
+ESP32 Code:
+
+client.ino
+
+```
+#include "controls.h"
+#include "net.h"
+#include <SPI.h>
+#include <TFT_eSPI.h>
+#include <mpu6050_esp32.h>
+#include <vector>
+
+TFT_eSPI tft = TFT_eSPI();
+
+// MARK: Client state
+
+enum class ClState { Idle, Waiting, Playing };
+ClState clState = ClState::Idle;
+int game_id = 0;
+int game_id_digit = 10;
+int game_id_pos = 0;
+char username[256];
+unsigned long game_start_time;
+
+// MARK: Network
+
+const uint16_t IN_BUFFER_SIZE = 1000;
+const uint16_t OUT_BUFFER_SIZE = 1000;
+const size_t BODY_BUFFER_SIZE = 512;
+char request_buffer[IN_BUFFER_SIZE];
+char response_buffer[OUT_BUFFER_SIZE];
+char body[BODY_BUFFER_SIZE];
+char cur_instruction[BODY_BUFFER_SIZE];
+
+// MARK: Inputs
+
+constexpr int BUTTON_P1[] = {5, 16, 33, 25};
+constexpr int BUTTON_P2[] = {1, 21, 3, 22};
+constexpr int SWITCH_PINS[] = {32};
+constexpr int DIAL_PINS[] = {14};
+constexpr int PHOTOT_PINS[] = {27, 12};
+
+std::vector<Button> panel1;
+std::vector<Button> panel2;
+std::vector<Switch> switches;
+std::vector<SmoothControl> dials;
+std::vector<SmoothControl> photots;
+
+int get_panel_out(std::vector<Button> panel) {
+    int i = 0;
+    for (auto &btn : panel) {
+        i++;
+        if (btn.state == BTN_PRESSED) return i;
+    }
+    return 0;
+}
+
+void post_states()
+{
+    strcpy(body, "");
+    snprintf(body, BODY_BUFFER_SIZE, "%sbutton_panel_1=%d&", body, get_panel_out(panel1));
+    snprintf(body, BODY_BUFFER_SIZE, "%sbutton_panel_2=%d&", body, get_panel_out(panel2));
+    int i = 1;
+    for (auto &swt : switches) {
+        snprintf(body, BODY_BUFFER_SIZE, "%sswitch_%d=%d&", body, i, swt.state);
+        i++;
+    }
+    i = 1;
+    for (auto &dial : dials) {
+        snprintf(body, BODY_BUFFER_SIZE, "%sdial_%d=%d&", body, i,
+                 dial.binnedReading + 1);
+        i++;
+    }
+    i = 1;
+    for (auto &photot : photots) {
+        snprintf(body, BODY_BUFFER_SIZE, "%sphototransistor_%d=%d&", body, i,
+                 photot.binnedReading > 6);
+        i++;
+    }
+    Serial.println(body);
+    post_request(body);
+}
+
+void setup()
+{
+    Serial.begin(115200);
+    tft.init();
+    tft.setRotation(4);
+    tft.setTextSize(1);
+    tft.fillScreen(TFT_BLACK);
+    wifi_setup();
+
+    for (auto p : BUTTON_P1) {
+        pinMode(p, INPUT_PULLUP);
+        panel1.push_back(new_button(p));
+    }
+    for (auto p : BUTTON_P2) {
+        pinMode(p, INPUT_PULLUP);
+        panel2.push_back(new_button(p));
+    }
+    for (auto p : DIAL_PINS) {
+        pinMode(p, INPUT);
+        dials.push_back(new_dial(p));
+    }
+    for (auto p : PHOTOT_PINS) {
+        pinMode(p, INPUT);
+        photots.push_back(new_photot(p));
+    }
+    for (auto p : SWITCH_PINS) {
+        pinMode(p, INPUT_PULLUP);
+        switches.push_back(new_switch(p));
+    }
+}
+
+void update_controls()
+{
+    for (auto &btn : panel1)
+        update_button(btn);
+    for (auto &btn : panel2)
+        update_button(btn);
+    for (auto &swt : switches)
+        update_switch(swt);
+    for (auto &dial : dials)
+        update_control(dial);
+    for (auto &photot : photots)
+        update_control(photot);
+}
+
+void fsm()
+{
+    if (clState == ClState::Idle) {
+        if (pullup(panel1[0])) {
+            game_id_digit = ++game_id_digit % 11;
+        }
+        else if (pullup(panel1[1]) && !(game_id_pos == 0 && game_id_digit == 10)) {
+            tft.drawLine((9 + game_id_pos) * 6, 8, (10 + game_id_pos) * 6 - 1,
+                         8, TFT_BLACK);
+            game_id_pos++;
+            if (game_id_digit == 10) {
+                post_join(game_id);
+                clState = ClState::Waiting;
+                tft.fillScreen(TFT_BLACK);
+                game_start_time = millis() + 15000;
+                return;
+            }
+            else {
+                game_id = game_id * 10 + game_id_digit;
+                game_id_digit = 10;
+            }
+        }
+
+        tft.setCursor(0, 0, 1);
+
+        if (game_id_pos > 0)
+            tft.printf("Game ID: %d", game_id);
+        else
+            tft.print("Game ID: ");
+        if (game_id_digit == 10)
+            tft.print(" ");
+        else
+            tft.print(game_id_digit);
+
+        tft.drawLine((9 + game_id_pos) * 6, 8, (10 + game_id_pos) * 6 - 1, 8,
+                     TFT_WHITE);
+    }
+    else if (clState == ClState::Waiting) {
+        tft.setCursor(0, 0, 1);
+        tft.printf("Username: %s\n", username);
+        if (millis() % 1000 < 333)
+            tft.println("Waiting for\nplayers.  ");
+        else if (millis() % 1000 < 666)
+            tft.println("Waiting for\nplayers . ");
+        else
+            tft.println("Waiting for\nplayers  .");
+
+        if (millis() >= game_start_time)
+            clState = ClState::Playing;
+    }
+    else if (clState == ClState::Playing) {
+        if (millis() % 1000 == 0) {
+            get_instruction(username, cur_instruction);
+            post_states();
+        }
+    }
+}
+
+void loop()
+{
+    update_controls();
+    fsm();
+}
+
+void post_request(char *body)
+{
+    snprintf(body, BODY_BUFFER_SIZE, "%suser=%s", body, username);
+    int body_len = strlen(body);
+    sprintf(request_buffer, "POST "
+                            "http://608dev-2.net/sandbox/sc/team076/spaceteam/"
+                            "update_instructions.py HTTP/1.1\r\n");
+    strcat(request_buffer, "Host: 608dev-2.net\r\n");
+    strcat(request_buffer,
+           "Content-Type: application/x-www-form-urlencoded\r\n");
+    sprintf(request_buffer + strlen(request_buffer), "Content-Length: %d\r\n",
+            body_len);
+    strcat(request_buffer, "\r\n");
+    strcat(request_buffer, body);
+    http_req("608dev-2.net", request_buffer, response_buffer, OUT_BUFFER_SIZE);
+}
+
+void get_instruction(char *username, char *cur_instruction)
+{
+    sprintf(request_buffer,
+            "GET "
+            "http://608dev-2.net/sandbox/sc/team076/spaceteam/"
+            "instruction_request.py?user=%s HTTP/1.1\r\n",
+            username);
+    strcat(request_buffer, "Host: 608dev-2.net\r\n");
+    strcat(request_buffer, "\r\n"); // add blank line!
+    http_req("608dev-2.net", request_buffer, response_buffer, OUT_BUFFER_SIZE);
+
+    if (strcmp(response_buffer, cur_instruction) != 0) {
+        tft.fillScreen(TFT_BLACK);
+        tft.setCursor(0, 0, 1);
+        tft.println("Instruction:");
+        tft.println(response_buffer);
+    }
+    Serial.println(response_buffer);
+
+
+    memset(cur_instruction, 0, OUT_BUFFER_SIZE);
+    sprintf(cur_instruction, response_buffer);
+}
+
+void post_join(int game_id)
+{
+    sprintf(body, "game_id=%d", game_id);
+    int body_len = strlen(body); // calculate body length (for header reporting)
+    sprintf(request_buffer,
+            "POST http://608dev-2.net/sandbox/sc/team076/spaceteam/new_game.py "
+            "HTTP/1.1\r\n");
+    strcat(request_buffer, "Host: 608dev-2.net\r\n");
+    strcat(request_buffer,
+           "Content-Type: application/x-www-form-urlencoded\r\n");
+    sprintf(request_buffer + strlen(request_buffer), "Content-Length: %d\r\n",
+            body_len); // append string formatted to end of request buffer
+    strcat(request_buffer, "\r\n"); // new line from header to body
+    strcat(request_buffer, body);   // body
+    strcat(request_buffer, "\r\n"); // header
+    http_req("608dev-2.net", request_buffer, response_buffer, OUT_BUFFER_SIZE);
+    Serial.println(response_buffer);
+    strncpy(username, response_buffer, strlen(response_buffer) - 1);
+}
+```
+
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

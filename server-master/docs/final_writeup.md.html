@@ -1,0 +1,403 @@
+<center><big><big> **Space Team** </big></big></center>
+
+# Summary
+
+Space Team is a cooperative multiplayer game involving fast-paced puzzle-solving. Teams are composed of multiple players, each player will have their own ESP system with numerous connected IO modules including switches, buttons, phototransistors, and more. Each ESP system will need its modules activated in a certain way, in a certain order, but the specific instructions are unknown to that player. Instead, each player is given instructions that correspond to a different player's system and they will have to work together to keep from **total system failure.** The ultimate goal is to complete instructions within before time runs out. Our inspiration for this comes from [Spaceteam](https://spaceteam.ca), a multiplayer application.
+
+# Gameplay Demo
+
+![SpaceTeam Reworked!](https://youtu.be/7mbSPgU37Gk)
+
+# System Overview
+
+We used our ESPs as customizable controllers, with every person being given a separate system layout to wire and configure, and they all connect to a server that handles generating and sending instructions, along with resolving completed instructions.
+
+## System Block
+
+******************************************************
+*                       .-.                          *
+*                    .-+   |  <---.     .-------.    *
+*                .--+       '--.   +---+         |   *
+*               |     Server    +----->|Database |   *
+*           .--> '+-----------+'       |         |   *
+*          |      |   ^       |         '-------'    *
+*          |      |   |       |                      *
+*          |      |   |       |                      *
+*       .--+-.    | .-+--.    |                      *
+*       |ESP1|<--'  |ESP2|<--'                       *
+*       '----'      '----'                           *
+******************************************************
+[Users (ESP32s) connect to the server in order to play the game, and throughout the course of the game, inputs and board states are stored in the database, while instructions and board layouts are pulled from the database. The server handles resolving inputs with instructions and the overall logic of the game]
+
+## State Machine
+
+<center><img src='https://g.gravizo.com/svg?
+ digraph G {
+   idle -> create_game -> waiting_for_players -> receive_layout -> receive_instructions;
+   receive_instructions -> wait_for_input -> POST_completed_action;
+   POST_completed_action -> increase_score -> receive_instructions;
+   wait_for_input -> time_limit_reached ->  lose_a_life -> receive_instructions;
+   lose_a_life -> game_over;
+   increase_score -> game_won;
+ }
+'/></center>
+
+# Game Functionality
+
+## Webpage
+
+Our webpage is used to help start and run games. Once a player starts a game, they can give their game ID to other players, allowing them to join. When each player joins the game, they can see the current live, game timer, and personal board layout by clicking their username. Usernames are assigned randomly when entering a game. Your username will appear on your LCD.
+
+## Boards + Modules
+
+There are a variety of board themes which change what your modules will be names each time you play a game. When you are ready to view your board, you can select your username on the webpage and it will display your board along with the current score and time left in the game.
+
+Each of these boards are representative of the boards you have set up with your ESP32. The modules all correspond to different buttons, switches, and other sensors on the ESP32 board so that when you press a button, the server is able to connect it to your in-game board.
+
+![Figure 4.3.1: Sample Board](https://imgur.com/UDoblfC.png)
+
+## Gameplay and Scoring
+
+Once the game starts, each player is given a set of instructions, which appear on the LCD, that do not correspond to their personal board. They must give these instructions to their teammates for them to complete the tasks. If a task is not complete within 15 seconds, then a life is lost. If all lives are lost or time runs out then its game over. You get a point every time you complete an instruction. To win you must get 20 points.
+
+# Server Functionality
+
+## Webpage
+
+The website is setup using a couple pages. A home page where the user can either start a game or join a game. Both options take the user to a page where they can see  how much time is left before the game starts as well as a link to their board page. The third page is the board osge which auto updates how many lives, the score and the time left im the players game and shows the player their board.
+
+CSS was used for the star animation.
+
+The pages are loaded by get request through python files and HTML files are shown on the page and update using javascript. Only two HTML files were actually used since there were only small chnages between the three pages.
+
+## Game Database
+
+User and game state is stored in `game.db`, an SQLite database. This database also stores board configurations and generated instructions for each player.
+The database tables are described below:
+
+### Players Table
+
+Table mapping which players were in which games.
+
+`username`  | `active_game_id`  | `player_id`
+----------- | ----------------- | -----------
+mateoeh     | 021               | 003
+[Figure 5.2.1: Players table example]
+
+### Games Table
+
+Table keeping track of important game state variables, including current score,
+lives remaining, and when the game started. These are later referenced to
+determine whether the game is in progress, has been won, or has been lost.
+
+`game_id`   | `start_time`                  | `lives`   | `score`   | `stage`
+----------- | ----------------------------- | --------- | --------- | -------
+021         | 2020-05-06 23:57:28.884889    | 5         | 10        | 0
+[Figure 5.2.2: Games table example]
+
+### Boards Table
+
+Table storing all the possible boards, keeps track of whether or not that board
+has already been given to a player so that no players receive the same board.
+
+<center> ID </center> | <center>In Use</center> | <center>Button Panel 1</center> | <center>Button Panel 2</center> | <center>Switch 1</center> | <center>Slider 1</center> | <center> Dial 1 </center> | <center> Phototrans 1 </center> | <center> Phototrans 2 </center>| <center> IMU </center> | <center> Image Name </center>
+--------|---|-----|---|---|---|---|---|---|---|---
+001 | 0 | 'Panhel' | 'Answer Checker' | 'My Major' | 'Productivity' | 'GPA' | 'Dorm Row' | 'MIT Timer' | 'Brass Rattler' | 'mit_board.png'
+[Figure 5.2.3: Boards table example]
+
+### Players-Boards Table
+
+Keeps track of which board is associated with which player in any given game.
+
+`username`  | `game_id` | `board_id`
+----------- | --------- | ----------
+mateoeh     | 021       | 001
+[Figure 5.2.4: Players-boards table example]
+
+### Instructions Table
+
+A table of all the instructions a player can receive during a game. There are 20
+unique, pseudorandomly generated instructions for each player.
+
+<center> Username </center> | <center> Game ID </center>  | <center> Board Id </center> | <center> Module </center> | <center> Modifier </center> | <center> Text </center> | <center> Order </center>
+---|---|---|----|----|----|----
+'jrales' | 024 | 001 | Phototrans 2 | 1 | 'Activate Solar Car!' | 1
+'jrales' | 024 | 001 | Switch 1 | 1 | 'Flip Productivity to On' | 2
+'jrales' | 024 | 001 | Button Panel 1 | 3 | 'Press 3 on Answer Checker' | 3
+[Figure 5.2.5: Instructions table example]
+
+### Instructions Queue Table
+
+Stores only active instructions, keeping track of whose board it belongs to,
+and which player has the instruction on their screen, along with how long ago
+it became active.
+
+<center> Username </center> | <center> Game ID </center>  | <center> Board Id </center> | <center> Module </center> | <center> Modifier </center> | <center> Text </center> | <center> Target User </center> | <center> Start Time </center>
+---|---|---|----|----|----|----|----
+'jrales' | 024 | 001 | Phototrans 2 | 1 | 'Activate Solar Car!' | 'mperaza' | 5 Seconds Ago
+'mperaza' | 024 | 001 | Switch 1 | 1 | 'Flip Gamma Rays to On' | 'jrales' | 2 Seconds Ago
+[Figure 5.2.6: Instructions queue table example]
+
+## Key File Descriptions
+
+### `gamedb.py`
+
+This module models our game database and provides convenience methods for
+creating tables, adding users to games, generating instructions, etc. This
+module also has context management methods, so you can open the database using
+the `with` statement:
+
+```
+with gamedb.GameDB() as db:
+    db.do_xyz()
+    ...
+```
+
+### `home.py`
+
+This file serves as the landing page for the project website, and includes
+links to creating a new game and joining an existing one.
+
+### `new_game.py`
+
+This file starts a new game when accessed with a GET request, and adds an ESP32
+to the game when accessed with a POST request.
+
+### `instruction_request.py`
+
+This module fields GET requests from the ESP32’s, returning the next
+instruction for a given username, which is then displayed on the ESP32 LCD.
+
+### `show_board.py`
+
+This file serves a webpage that displays a given user's board, along with the
+score, lives, and timer for the game they are in.
+
+### `update_instructions.py`
+
+Every 100ms, the ESP32’s POST a list of all their inputs to this module, which
+recognizes when instructions are completed and updates game state accordingly.
+
+# ESP32 Functionality
+
+## List of parts
+
+- 8x buttons
+- 1x switch
+- 1x slider
+- 1x dial
+- 2x phototransistors
+- 2x 4.7kΩ 5% resistors
+- 1x IMU
+- 1x TFT
+
+## Board Layout
+
+![Figure 6.2.1: Board Layout](https://imgur.com/BjRDZh0.png width="300px")
+
+![Figure 6.2.2: Assembled Board](https://imgur.com/SdWkrAw.png)
+
+## Pin Mapping
+
+<center> Module </center> | <center> IO Pin </center> | <center> Marking </center> |
+--------|---|-----
+Button Panel 1 | IO | -
+1 | IO33 | 33
+2 | IO25 | 25
+3 | IO26 | 26
+4 | IO27 | 27
+Button Panel 2 | IO | -
+1 | IO14 | 14
+2 | IO13 | 13
+3 | IO12 | 12
+4 | IO0 | 0
+Switch 1 | IO32 | 32
+Dial 1 | IO34 | 34
+Slider 1 | IO36 | VP
+Phototransistor 1 | IO39 | VN
+Phototransistor 2 | IO35 | 35
+IMU | IO21 | 21
+[Figure 6.3.1: Map of components to their IO pins and visible markings on ESP32]
+
+## Modularity
+
+The majority of the function of our ESP32 system is to records inputs from each of the
+different modules, from button panels to phototransistors, and send them to the
+server where they are connected to their instructions and resolved. Each module has a
+different instruction, so input is recorded and expressed differently for each.
+
+### Button Panels
+
+There are two button panels, each with four buttons, and the task associated with
+them is to press a specific button (1, 2, 3 or 4). The ESP32 records whether
+or not a button is being held down, and sends the number of the button being held
+down on each panel, or 0 if none are being held down.
+
+### Switch
+
+There is one switch, and the ESP32 simply keeps track of its state. If the switch
+is open, it sends 0 for "Off" and if the switch is closed, it sends 1 for "On."
+
+### Phototransistors
+
+The instructions for the phototransistors, which vary voltage depending on the
+brightness of their environment, are to cover them. As such, the ESP32 reads the
+output of the phototransistors, and if the reading is below a certain threshold,
+indicating it has been covered, it sends a 1, or a 0 if it has not been covered.
+
+### Dial and Slider
+
+The dial and slider instructions are to set the respective modules to a certain
+level. Both have their analog voltage readings mapped to small discrete bins,
+0-2 for the slider and 1-4 for the dial, which are then directly sent to the server.
+
+### IMU
+
+The imu instructions are to shake the controllers, and similar to the phototransistors,
+if the magnitude of the acceleration crosses a certain threshold, the ESP32 sends
+a 1 associated with it.
+
+### All Modules and Names
+
+Panel Names    |    Dial Names    |    Switch Names    |    Slider Names    |    Phototransistor Names    |    IMU names
+---|---|---|---|---|---
+**Board 1** | | | | | |
+Panhel |    MIT Timer    |    Productivity    |    Dorm Row    |    Succulent    |    DBF
+Answer Checker    |        |        |        |    Solar Car    |
+**Board 2** | | | | | |
+Infinity Stones    |    S.H.I.E.L.D.    |    Gamma Rays    |    Pym Particles    |    Arc Reactor    |    Sling Ring
+Ultron    |        |        |        |    Spidey Senses    |
+**Board 3** | | | | | |
+Horcrux    |    Time Turner    |    Golden Snitch    |    Basalisk    |    Lumos    |    Portkey
+O.W.L.s    |        |        |        |    Deluminator    |
+**Board 4** | | | | | |
+Millennium Falcon    |    Sith    |    Hyperdrive    |    Podracer    |    Lightsaber    |    BB-8
+Death Star    |        |        |        |    Holocron    |
+**Board 5** | | | | | |
+The Delorean    |    Clock Tower    |    Great Scott    |    Hoverboard    |    Lightning Rod    |    Flux Capacitor
+Almanac    |        |        |        |    Plutonium    |
+[Figure 6.4.6: Table of Boards and their Module Names]
+
+## Key File Descriptions
+
+### `client.ino`
+
+The main source file for the ESP32 clients, which provides an interface for
+joining a game, displays your username to you, and then displays instructions
+and collects inputs during the game.
+
+### `controls.h`
+
+Defines data structures for the ESP32s’ various input methods (buttons,
+switches, dials, sliders, and phototransistors) and various functions to create
+and modify those structures. This file also contains parameters for the
+exponential moving average used to denoise analog inputs.
+
+```
+typedef struct Button;
+void update_button(Button &btn);
+bool pullup(const Button &btn);
+
+typedef struct Switch;
+void update_switch(Switch &swt);
+bool flipped(const Switch &swt);
+
+typedef struct SmoothControl;
+void update_control(SmoothControl &ctl);
+
+Button new_button(int pin);
+Switch new_switch(int pin);
+SmoothControl new_dial(int pin);
+SmoothControl new_slider(int pin);
+SmoothControl new_photot(int pin);
+```
+
+### `map_range.h`
+
+Defines a function that maps analog reads onto a given range.
+
+```
+int map_range(double value, int in_bits, int out_range);
+```
+
+### `net.h`
+
+Network helper file that defines convenience functions for connecting to Wi-Fi
+and sending HTTP requests.
+
+```
+void wifi_setup();
+void http_req(const char *host, char *request, char *response,
+              int response_size);
+```
+
+# Milestones
+
+## Game Connection
+
+These milestones helped us establish a connection to a game through both the webpage and ESP. It was very beneficial for us to get this done early as it made for easy hardware and database testing.
+
+![Connecting to Game](https://youtu.be/Y599-nAjkaQ)
+
+![Connecting to Game via ESP](https://youtu.be/ESSopEr-PKI)
+
+## Instructions
+
+These milestones helped us create and update instructions that were given to each player.
+
+![Updating Instructions](https://www.youtube.com/watch?v=ZbA1sq3_7yE)
+
+![Updating Instructions on TFT](https://youtu.be/g2OsDLwl91s)
+
+## Modules
+
+This milestone involved most of the ESP code which got all of the outputs from the different modules which would later be sent to our server.
+
+![Module Outputs](https://youtu.be/iwjDxjPIdfA)
+
+## Full Game
+
+These demos show clips of full games being played with one and two players. At this point we just needed to adjust certain game elements like scoring and timing.
+
+![Single Player Game](https://youtu.be/G3a6pUc0FGo)
+
+![Two Player Game: Player 1](https://youtu.be/QN9Pb_de5kM)
+
+![Two Player Game: Player 2](https://youtu.be/57ZNl5st5Yc)
+
+# Team Members
+
+- Mateo Hernandez
+- Julian Hamelberg
+- Joseph Morales
+- Mario Peraza
+
+# Image Appendix
+
+## Modules
+
+![Slider](https://imgur.com/i5VfQ6s.png)
+
+![Switch](https://imgur.com/bHAgEmL.png)
+
+![Panel](https://imgur.com/BoruUOc.png)
+
+![Dial](https://imgur.com/IaxL0Qg.png)
+
+![IMU](https://imgur.com/ufVZeY8.png)
+
+![Phototransistor](https://imgur.com/ufVZeY8.png)
+
+## Boards
+
+![Back To The Future](https://imgur.com/ScoDvmw.png)
+
+![Harry Potter](https://imgur.com/UDoblfC.png)
+
+![Marvel](https://imgur.com/IJXWG3V.png)
+
+![MIT](https://imgur.com/GRShr5z.png)
+
+![Star Wars](https://imgur.com/WS3jCsy.png)
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
